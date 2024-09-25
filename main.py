@@ -67,4 +67,26 @@ plt.show()
 
 
 ## -- m vs T
-
+Ts = []
+Masses = []
+for p in done:
+    maxT = 0
+    arr = np.loadtxt(p)
+    for x, y in arr:
+        if y != 0.0:
+            maxT = x
+        else:
+            break
+    _, _, _, en, _ = parse_fname(p)
+    Masses.append(en)
+    Ts.append(maxT)
+Masses = np.array(Masses, dtype=np.float64)
+Ts = np.array(Ts, dtype=np.float64)
+arr = np.vstack([Ts, Masses]).T
+arr = arr[arr[:, 1].argsort()]
+plt.xscale("log")
+plt.yscale("log")
+plt.xlabel(r"$T_\text{max}$ (keV)")
+plt.ylabel(r"$m_{\chi}$ $\left(\frac{\text{GeV}}{c^2}\right)$")
+plt.plot(arr[:,0], arr[:,1])
+plt.show()

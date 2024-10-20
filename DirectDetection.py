@@ -20,6 +20,10 @@ class DirectDetection:
 
     __inited = False
 
+    AVOGADROS_CONSTANT = 6.0221415e23 # mol^-1
+    ONE_MOLE_ANTHRACENE = AVOGADROS_CONSTANT * 24 # atoms
+    DM_DENSITY = 0.4 # GeV cm^-3
+
     @staticmethod
     def init(directory:str = "data"):
         '''
@@ -111,21 +115,41 @@ class DirectDetection:
                     yield DirectDetection.get_fname(m, r, e)
 
     class Plot:
-        def __init__(self, ax, args, kwargs):
+        def __init__(self, ax, args, kwargs, command="plot"):
             self.ax = ax
             self.args = args
             self.kwargs = kwargs
+            self.command = command
         def plot(self):
-            self.ax.plot(*self.args, **self.kwargs)
+            getattr(self.ax, self.command)(*self.args, **self.kwargs)
+
+        @staticmethod
+        def set_sizes(w =20, h=20, fsz=30):
+            plt.rc("figure", {"figsize": (w,h)})
+            plt.rc("font", {"size": fsz})
+    
+    # in kwargs: scale
+    @staticmethod
+    def get_plot(x, y, **kwargs):
+        args = []
+
 
     @staticmethod
-    def get_plot(*args):
+    def get_csd_vs_T_plot(*args):
+        """
+        Returns a plot object of the cross-section differential against T
+
+        May be called as:
+        get_csd_vs_T_plot(filename:str)
+        OR
+        get_csd_vs_T_plot(mol:str, rt:str, en:float)
+        """
         if len(args) == 1:
             filename = args[0]
         elif len(args) == 3:
             filename = DirectDetection.get_fname(*args)
         else:
-            raise Exception("get_plot has two signatures: get_plot(filename:str) and get_plot(mol:str, rt:str, en:float)")
+            raise Exception("get_csd_vs_T_plot has two signatures: get_csd_vs_T_plot(filename:str) and get_csd_vs_T_plot(mol:str, rt:str, en:float)")
 
         ax = plt.gca()
         data = np.loadtxt(filename)
@@ -181,3 +205,69 @@ class DirectDetection:
         """
         A = np.vstack([tmax_matrix[:,0], np.zeros(len(tmax_matrix[:,0]))]).T
         return np.linalg.lstsq(A, tmax_matrix[:,1])[0][0]
+    
+    @staticmethod
+    def get_dR_dT(m_x:float, dsv_dt, N_T:int = ONE_MOLE_ANTHRACENE, rho_x = DM_DENSITY):
+        """
+        Returns the array of computed dR/dT for each d(sigma v)/dt
+
+        Keyword arguments:
+        m_x:float -- mass of dark matter in GeV
+        dsv_dt:np.array(float64) -- averaged velocity-weighted differential cross sections (in cm^3/keV/day)
+        N_T:int -- number of atoms in detector (default: 1 mol of anthracene)
+        rho_x:float -- density of dark matter in GeV cm^-3
+        """
+        return N_T * rho_x / m_x * dsv_dt
+
+
+    @staticmethod
+    def __cum_area(steps, values):
+        total = 0
+        totals = []
+        totals.append(0)
+        for i in range(len(steps)- 2, -1, -1):
+            step_size = steps[i + 1] - steps[i]
+            total += step_size * values[i]
+            totals.append(total)
+        return totals[::-1]
+
+
+
+    
+    @staticmethod
+    def get_R_for_mx(m_x:float, T, dsv_dt, N_T:int = ONE_MOLE_ANTHRACENE, rho_x = DM_DENSITY):
+        """
+        Returns the array of computed R for a given m_x for each T, d(sigma v)/dt pair
+        R[i] = integral from T[i] to Tmax of dR/dT
+
+        Keyword arguments:
+        m_x:float -- mass of dark matter in GeV
+        T:np.array(float64) -- energy transfers
+        dsv_dt:np.array(float64) -- averaged velocity-weighted differential cross sections (in cm^3/keV/day)
+        N_T:int -- number of atoms in detector (default: 1 mol of anthracene)
+        rho_x:float -- density of dark matter in GeV cm^-3
+        """
+        dR_dT = DirectDetection.get_dR_dT(m_x, dsv_dt, N_T, rho_x)
+        return np.array(DirectDetection.__cum_area(T, dR_dT))
+
+    # NOTE: Could be made more efficient
+    @staticmethod
+    def get_R_for_Tmin(Tmin:float, m_x, T, dsv_dt, N_T:int = ONE_MOLE_ANTHRACENE, rho_x = DM_DENSITY):
+        """
+        Returns the array of computed R for a given Tmin for each m_x, d(sigma v)/dt pair
+        R[i] = integral from Tmin to Tmax of dR/dT
+
+        Keyword arguments:
+        Tmin:float -- energy transfer to look at
+        m_x:np.array(float64) -- masses of dark matter in GeV
+        T:np.array(float64) -- energy transfers
+        dsv_dt:np.array(float64) -- averaged velocity-weighted differential cross sections (in cm^3/keV/day)
+        N_T:int -- number of atoms in detector (default: 1 mol of anthracene)
+        rho_x:float -- density of dark matter in GeV cm^-3
+        """
+        dR_dT = DirectDetection.get_dR_dT(m_x, dsv_dt, N_T, rho_x)
+        Rs = []
+        for m in m_x:
+            R = DirectDetection.get_R_for_mx(m_x, T, dsv_dt, N_T, rho_x)
+            Rs.append(R[np.where(T == Tmin)])
+        return np.array(Rs)
